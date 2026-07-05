@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Lars Wikman
+#
+# SPDX-License-Identifier: Apache-2.0
+
 defmodule BodgeUSBGadget.FunctionFsTest do
   use ExUnit.Case, async: false
 
@@ -67,7 +71,7 @@ defmodule BodgeUSBGadget.FunctionFsTest do
       # Slice the full-speed set out (after the 20-byte header) and wrap it in
       # a synthetic configuration header so parse_configuration/1 accepts it.
       set_len = 9 + 7 + 7
-      <<_header::binary-size(20), fs_set::binary-size(^set_len), _hs::binary>> = blob
+      fs_set = binary_part(blob, 20, set_len)
       config = <<9, 2, 9 + set_len::little-16, 1, 1, 0, 0x80, 50>> <> fs_set
 
       alias BodgeUSB.Descriptor

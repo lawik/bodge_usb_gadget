@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Lars Wikman
+#
+# SPDX-License-Identifier: Apache-2.0
+
 defmodule BodgeUSBGadgetTest do
   use ExUnit.Case, async: false
 
@@ -102,7 +106,7 @@ defmodule BodgeUSBGadgetTest do
 
     test "rejects an attribute key that would escape the gadget tree", %{root: root} do
       # Names are validated, but keys reach the filesystem as path segments too.
-      assert {:error, {_, {:unsafe_attribute_name, "../escape"}}} =
+      assert {:error, {:unsafe_attribute_name, "../escape"}} =
                Gadget.define("demo", %{attrs: %{"../escape" => 1}}, root: root)
 
       refute File.exists?(Path.join(root, "escape"))

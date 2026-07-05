@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Lars Wikman
+#
+# SPDX-License-Identifier: Apache-2.0
+
 defmodule BodgeUSBGadget.FunctionFs do
   @moduledoc """
   Custom USB device functions over FunctionFS.
@@ -120,7 +124,7 @@ defmodule BodgeUSBGadget.FunctionFs do
     with :ok <- File.mkdir_p(mountpoint) do
       case System.cmd("mount", ["-t", "functionfs", instance, mountpoint], stderr_to_stdout: true) do
         {_out, 0} -> :ok
-        {out, status} -> {:error, {:mount_failed, status, String.trim(out)}}
+        {out, status} -> {:error, {:mount_failed, {status, String.trim(out)}}}
       end
     end
   end
@@ -130,7 +134,7 @@ defmodule BodgeUSBGadget.FunctionFs do
   def umount(mountpoint) do
     case System.cmd("umount", [mountpoint], stderr_to_stdout: true) do
       {_out, 0} -> :ok
-      {out, status} -> {:error, {:umount_failed, status, String.trim(out)}}
+      {out, status} -> {:error, {:umount_failed, {status, String.trim(out)}}}
     end
   end
 
@@ -322,7 +326,7 @@ defmodule BodgeUSBGadget.FunctionFs do
   defp write_blob(handle, blob) do
     case Nif.write(handle, blob) do
       {:ok, n} when n == byte_size(blob) -> :ok
-      {:ok, n} -> {:error, {:short_blob_write, n, byte_size(blob)}}
+      {:ok, n} -> {:error, {:short_blob_write, {n, byte_size(blob)}}}
       {:error, _} = err -> err
     end
   end

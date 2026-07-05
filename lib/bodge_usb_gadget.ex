@@ -1,3 +1,7 @@
+# SPDX-FileCopyrightText: 2026 Lars Wikman
+#
+# SPDX-License-Identifier: Apache-2.0
+
 defmodule BodgeUSBGadget do
   @moduledoc """
   USB gadget (device-side) definition over configfs.
@@ -76,9 +80,11 @@ defmodule BodgeUSBGadget do
 
   @doc """
   Create the configfs tree for `name` from `spec`. Returns `{:ok, gadget}`;
-  on any failure the partial tree is torn down again and `{:error, {step,
-  reason}}` is returned. Fails with `{:error, :already_defined}` if a gadget
-  of that name exists. `opts[:root]` overrides the configfs root (tests).
+  on any failure the partial tree is torn down again and `{:error, reason}`
+  is returned, where `reason` is an atom or a `{tag, detail}` tuple (e.g.
+  `{:function_failed, {"hid.usb0", :enoent}}`). Fails with
+  `{:error, :already_defined}` if a gadget of that name exists.
+  `opts[:root]` overrides the configfs root (tests).
   """
   @spec define(String.t(), spec(), keyword()) :: {:ok, t()} | {:error, term()}
   def define(name, spec, opts \\ []) when is_binary(name) and is_map(spec) do
@@ -173,7 +179,7 @@ defmodule BodgeUSBGadget do
     case File.rmdir(gadget.path) do
       :ok -> :ok
       {:error, :enoent} -> :ok
-      {:error, reason} -> {:error, {gadget.path, reason}}
+      {:error, reason} -> {:error, {:remove_failed, reason}}
     end
   end
 
@@ -274,7 +280,7 @@ defmodule BodgeUSBGadget do
     Enum.reduce_while(functions, :ok, fn {name, attrs}, :ok ->
       case build_function(gadget, name, attrs) do
         :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, {{:function, name}, reason}}}
+        {:error, reason} -> {:halt, {:error, {:function_failed, {name, reason}}}}
       end
     end)
   end
@@ -291,7 +297,7 @@ defmodule BodgeUSBGadget do
     Enum.reduce_while(configs, :ok, fn {name, config}, :ok ->
       case build_config(gadget, name, config) do
         :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, {{:config, name}, reason}}}
+        {:error, reason} -> {:halt, {:error, {:config_failed, {name, reason}}}}
       end
     end)
   end
@@ -325,7 +331,7 @@ defmodule BodgeUSBGadget do
 
       case File.ln_s(target, link) do
         :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, {{:link, fname}, reason}}}
+        {:error, reason} -> {:halt, {:error, {:link_failed, {fname, reason}}}}
       end
     end)
   end
@@ -336,7 +342,7 @@ defmodule BodgeUSBGadget do
     Enum.reduce_while(attrs, :ok, fn {file, value}, :ok ->
       case write_attr(dir, file, value) do
         :ok -> {:cont, :ok}
-        {:error, reason} -> {:halt, {:error, {Path.join(dir, file), reason}}}
+        {:error, _} = err -> {:halt, err}
       end
     end)
   end
@@ -345,7 +351,7 @@ defmodule BodgeUSBGadget do
     if safe_segment?(file) do
       case File.write(Path.join(dir, file), format_value(value)) do
         :ok -> :ok
-        {:error, _} = err -> err
+        {:error, posix} -> {:error, {:attribute_write_failed, {file, posix}}}
       end
     else
       {:error, {:unsafe_attribute_name, file}}
