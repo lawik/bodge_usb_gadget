@@ -1,4 +1,5 @@
 %{
+  "bodge_usb": {:hex, :bodge_usb, "0.1.1", "761cffcf6c5c2813a4033899b6b491cb808214c3ea60b5473206e9f684f517b3", [:make, :mix], [{:elixir_make, "~> 0.8", [hex: :elixir_make, repo: "hexpm", optional: false]}], "hexpm", "ae72c9eb747e2bc08198adc601191d8607c4a561ee5ed497d3e87ac14312e548"},
   "bun": {:hex, :bun, "1.6.0", "ab49eb8b956f7492e8d6c5a43c0b96e94074aa0ace698a4be7e9b3b3b281d1b3", [:mix], [{:nimble_pool, "~> 1.0", [hex: :nimble_pool, repo: "hexpm", optional: false]}], "hexpm", "6f17b0544b452077da87d14192042744826dabb089d968b8caf8b298968e7a17"},
   "bunt": {:hex, :bunt, "1.0.0", "081c2c665f086849e6d57900292b3a161727ab40431219529f13c4ddcf3e7a44", [:mix], [], "hexpm", "dc5f86aa08a5f6fa6b8096f0735c4e76d54ae5c9fa2c143e5a1fc7c1cd9bb6b5"},
   "credo": {:hex, :credo, "1.7.19", "cc52129665fc7c15143d47838fda0f9cd6dac9ceced7bf4da6f85fcbfe64b12a", [:mix], [{:bunt, "~> 0.2.1 or ~> 1.0", [hex: :bunt, repo: "hexpm", optional: false]}, {:file_system, "~> 0.2 or ~> 1.0", [hex: :file_system, repo: "hexpm", optional: false]}, {:jason, "~> 1.0", [hex: :jason, repo: "hexpm", optional: false]}], "hexpm", "2d8bc95d5a7bb99dd2613621d4f08c6a3575c3fd4b62e6a2b48a100352a557b8"},

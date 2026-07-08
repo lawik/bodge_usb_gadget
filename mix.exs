@@ -109,7 +109,7 @@ defmodule BodgeUSBGadget.MixProject do
       {:nstandard, "~> 0.5", only: [:dev, :test], runtime: false},
       # Host side of the same VM-backed integration tests: this library defines
       # a gadget and bodge_usb drives it from the host end of dummy_hcd.
-      {:bodge_usb, path: "../bodge_usb", only: [:test]},
+      {:bodge_usb, "~> 0.1.1", only: [:test]},
       {:ex_doc, "~> 0.40", only: [:dev, :test], runtime: false},
       {:dialyxir, "~> 1.4", only: [:dev, :test], runtime: false},
       {:credo, "~> 1.7", only: [:dev, :test], runtime: false},

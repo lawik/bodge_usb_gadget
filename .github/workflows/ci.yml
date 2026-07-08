@@ -8,9 +8,6 @@ name: ci
 # across the supported version corners. Device-backed tests are tagged and
 # excluded by default (test_helper.exs); they run inside the bodge_usb VM
 # harness.
-#
-# bodge_usb is checked out alongside because the device-backed tests depend on
-# it (path dep, only: :test) and mix deps.get resolves it unconditionally.
 
 on:
   push:
@@ -18,10 +15,6 @@ on:
 
 permissions:
   contents: read
-
-defaults:
-  run:
-    working-directory: bodge_usb_gadget
 
 jobs:
   host-tests:
@@ -39,13 +32,6 @@ jobs:
             lint: true
     steps:
       - uses: actions/checkout@v4
-        with:
-          path: bodge_usb_gadget
-
-      - uses: actions/checkout@v4
-        with:
-          repository: lawik/bodge_usb
-          path: bodge_usb
 
       - uses: erlef/setup-beam@v1
         with:
@@ -56,9 +42,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: |
-            bodge_usb_gadget/deps
-            bodge_usb_gadget/_build
-          key: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('bodge_usb_gadget/mix.lock') }}
+            deps
+            _build
+          key: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-${{ hashFiles('mix.lock') }}
           restore-keys: ${{ runner.os }}-mix-${{ matrix.otp }}-${{ matrix.elixir }}-
 
       - run: mix deps.get
