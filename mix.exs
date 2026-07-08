@@ -5,10 +5,12 @@
 defmodule BodgeUSBGadget.MixProject do
   use Mix.Project
 
+  @version "0.1.0"
+
   def project do
     [
       app: :bodge_usb_gadget,
-      version: "0.1.0",
+      version: @version,
       elixir: "~> 1.17",
       start_permanent: Mix.env() == :prod,
       elixirc_paths: elixirc_paths(Mix.env()),
@@ -38,7 +40,7 @@ defmodule BodgeUSBGadget.MixProject do
     [
       main: "readme",
       source_url: "https://github.com/lawik/bodge_usb_gadget",
-      source_ref: "main",
+      source_ref: "v#{@version}",
       extras: ["README.md", "CHANGELOG.md"]
     ]
   end
@@ -104,7 +106,7 @@ defmodule BodgeUSBGadget.MixProject do
   defp deps do
     [
       {:elixir_make, "~> 0.8", runtime: false},
-      {:nstandard, "~> 0.5", runtime: false},
+      {:nstandard, "~> 0.5", only: [:dev, :test], runtime: false},
       # Host side of the same VM-backed integration tests: this library defines
       # a gadget and bodge_usb drives it from the host end of dummy_hcd.
       {:bodge_usb, path: "../bodge_usb", only: [:test]},
