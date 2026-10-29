@@ -6,16 +6,20 @@ library talks *to* USB devices, this one makes the machine *be* one, on
 UDC-capable hardware (OTG ports on Pi Zero/4, BeagleBone, most Nerves
 targets, or `dummy_hcd` for a virtual UDC).
 
-Two capabilities:
+Three capabilities:
 
 - `BodgeUSBGadget`: define kernel-implemented device classes (HID, serial,
-  ethernet, mass storage, ...) as a configfs gadget tree; bind/unbind to a
-  UDC; resolve the resulting `/dev` nodes and network interfaces. Pure
-  filesystem plumbing, no processes.
+  ethernet, mass storage, webcam, ...) as a configfs gadget tree, nested
+  functions included; bind/unbind to a UDC; resolve the resulting `/dev`
+  nodes and network interfaces. Pure filesystem plumbing, no processes.
 - `BodgeUSBGadget.FunctionFs`: serve fully custom device functions from
   Elixir over FunctionFS. Vendor control requests arrive as handler
   callbacks; endpoints are driven with blocking `read/2`/`write/2` (dirty
   I/O schedulers, no blocked BEAM schedulers).
+- `BodgeUSBGadget.UVC`: be a webcam. `UVC.function/2` lays out the kernel's
+  UVC function for the formats and sizes you offer (MJPEG, YUYV), and the
+  server answers the host's format negotiation and sends the frames you
+  give it, through a small helper program (`priv/uvc_gadget`).
 
 ## Example
 
@@ -36,13 +40,32 @@ spec = %{
 ```
 
 See `BodgeUSBGadget.FunctionFs` for the custom-function lifecycle (mount,
-descriptors, SETUP handler, endpoint files).
+descriptors, SETUP handler, endpoint files), and `BodgeUSBGadget.UVC` for a
+webcam:
+
+```elixir
+{:ok, g} =
+  BodgeUSBGadget.define("webcam", %{
+    vendor_id: 0x1D6B,
+    product_id: 0x0102,
+    functions: %{"uvc.cam" => BodgeUSBGadget.UVC.function(mjpeg: [{1280, 720}])},
+    configs: %{"c.1" => %{configuration: "webcam", functions: ["uvc.cam"]}}
+  })
+
+:ok = BodgeUSBGadget.bind(g)
+{:ok, device} = BodgeUSBGadget.device_node(g, "uvc.cam")
+{:ok, uvc} = BodgeUSBGadget.UVC.start_link(device: device)
+
+# Once the host opens the camera:
+#   {:uvc, ^uvc, {:streaming, %{format: :mjpeg, width: 1280, height: 720, fps: 30}}}
+BodgeUSBGadget.UVC.frame(uvc, jpeg)
+```
 
 ## Requirements
 
 Linux with configfs mounted, `libcomposite` and the `usb_f_*` modules for the
-functions used, a UDC, and root (or equivalent permissions on
-`/sys/kernel/config`).
+functions used (`usb_f_uvc`, `CONFIG_USB_CONFIGFS_F_UVC`, for a webcam), a
+UDC, and root (or equivalent permissions on `/sys/kernel/config`).
 
 ## Testing
 

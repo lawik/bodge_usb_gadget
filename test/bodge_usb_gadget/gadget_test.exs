@@ -113,6 +113,46 @@ defmodule BodgeUSBGadgetTest do
       refute File.dir?(Path.join(root, "demo"))
     end
 
+    test "nested function attributes: subdirectories, then symlinks", %{root: root} do
+      spec = %{
+        functions: %{
+          "uvc.cam" => [
+            streaming_maxpacket: 3072,
+            streaming: [
+              mjpeg: [m: [{"640x480", [wWidth: 640, wHeight: 480]}]],
+              header: [h: [m: {:link, "streaming/mjpeg/m"}]]
+            ],
+            control: %{"header" => %{"h" => %{}}}
+          ]
+        },
+        configs: %{"c.1" => %{functions: ["uvc.cam"]}}
+      }
+
+      assert {:ok, g} = Gadget.define("cam", spec, root: root)
+      f = Path.join(g.path, "functions/uvc.cam")
+
+      assert File.read!(Path.join(f, "streaming_maxpacket")) == "3072"
+      assert File.read!(Path.join(f, "streaming/mjpeg/m/640x480/wWidth")) == "640"
+      assert File.dir?(Path.join(f, "control/header/h"))
+
+      link = Path.join(f, "streaming/header/h/m")
+      assert {:ok, %File.Stat{type: :symlink}} = File.lstat(link)
+      assert File.read_link!(link) == Path.join(f, "streaming/mjpeg/m")
+
+      _ = Gadget.remove(g)
+      refute File.exists?(link)
+    end
+
+    test "a link must name a directory of the same function", %{root: root} do
+      # A tmpdir keeps the half-built tree (configfs wouldn't), so one gadget each.
+      for {target, i} <- Enum.with_index(["../other", "/abs/path", "a/../../b", ""]) do
+        spec = %{functions: %{"uvc.cam" => [x: {:link, target}]}}
+
+        assert {:error, {:function_failed, {"uvc.cam", {:unsafe_link, {"x", ^target}}}}} =
+                 Gadget.define("cam#{i}", spec, root: root)
+      end
+    end
+
     test "an unsupported attribute value fails typed and leaves no tree", %{root: root} do
       assert {:error, {:build_failed, _}} =
                Gadget.define("demo", %{attrs: %{"bDeviceClass" => :nope}}, root: root)
