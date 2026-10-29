@@ -49,6 +49,27 @@ defmodule BodgeUSBGadget do
   (e.g. `report_desc`), booleans as `1`/`0`. `max_power` is in mA. `os_desc`
   (Windows compatibility descriptors) is not covered; for fully custom device
   functions see `BodgeUSBGadget.FunctionFs`.
+
+  ## Nested functions
+
+  Some functions are a tree rather than a flat set of attributes: a webcam
+  (`uvc`) has its formats and frames as directories, tied together with
+  symlinks. In a function's attributes, a map or a list of `{name, value}`
+  pairs is a subdirectory, made (or entered, when the kernel already has it)
+  with its own attributes; `{:link, path}` is a symlink to `path`, a
+  directory elsewhere in the same function. Lists keep their order, which
+  matters where the kernel numbers things in the order they are made.
+  Symlinks are made last, in declaration order, once every directory and
+  attribute is in place. `BodgeUSBGadget.UVC.function/2` builds a webcam's.
+
+      "uvc.cam" => [
+        streaming: [
+          mjpeg: [m: ["720p": [wWidth: 1280, wHeight: 720, ...]]],
+          header: [h: [m: {:link, "streaming/mjpeg/m"}]],
+          ...
+        ],
+        ...
+      ]
   """
 
   alias __MODULE__, as: Gadget
@@ -74,9 +95,16 @@ defmodule BodgeUSBGadget do
           optional(:bcd_device) => 0..0xFFFF,
           optional(:attrs) => %{optional(String.t()) => term()},
           optional(:strings) => %{optional(atom()) => String.t()},
-          optional(:functions) => %{optional(String.t()) => map()},
+          optional(:functions) => %{optional(String.t()) => attrs()},
           optional(:configs) => %{optional(String.t()) => map()}
         }
+
+  @typedoc """
+  A function's attributes: values are written to files of their key's name,
+  except a map or `{name, value}` list (a subdirectory) and `{:link, path}` (a
+  symlink to a directory of the same function). See "Nested functions".
+  """
+  @type attrs :: %{optional(atom() | String.t()) => term()} | [{atom() | String.t(), term()}]
 
   @doc """
   Create the configfs tree for `name` from `spec`. Returns `{:ok, gadget}`;
@@ -173,6 +201,10 @@ defmodule BodgeUSBGadget do
       File.rmdir(Path.join([gadget.path, "configs", config]))
     end
 
+    for function <- ls(Path.join(gadget.path, "functions")) do
+      remove_tree(Path.join([gadget.path, "functions", function]))
+    end
+
     rmdir_all(Path.join(gadget.path, "functions"))
     rmdir_all(Path.join(gadget.path, "strings"))
 
@@ -186,7 +218,9 @@ defmodule BodgeUSBGadget do
   @doc """
   The `/dev` node backing a chardev function, resolved through the function's
   `dev` attribute (`major:minor` -> `/sys/dev/char`), with the `acm` port
-  number as a fallback. E.g. `{:ok, "/dev/hidg0"}` for `"hid.usb0"`.
+  number as a fallback. E.g. `{:ok, "/dev/hidg0"}` for `"hid.usb0"`. A webcam
+  (`uvc`) function's is its V4L2 output device, which exists while the gadget
+  is bound: `{:ok, "/dev/video10"}` for `"uvc.camera"`.
   """
   @spec device_node(t(), String.t()) :: {:ok, Path.t()} | {:error, term()}
   def device_node(%Gadget{} = gadget, function) do
@@ -195,6 +229,7 @@ defmodule BodgeUSBGadget do
     cond do
       File.exists?(Path.join(fpath, "dev")) -> resolve_chardev(Path.join(fpath, "dev"))
       File.exists?(Path.join(fpath, "port_num")) -> resolve_acm(Path.join(fpath, "port_num"))
+      String.starts_with?(function, "uvc.") -> resolve_uvc(gadget, function)
       true -> {:error, :no_device_node}
     end
   end
@@ -288,10 +323,63 @@ defmodule BodgeUSBGadget do
   defp build_function(gadget, name, attrs) do
     fpath = Path.join([gadget.path, "functions", name])
 
-    with :ok <- File.mkdir_p(fpath) do
-      write_attrs(fpath, Enum.map(attrs, fn {key, value} -> {to_string(key), value} end))
+    with :ok <- File.mkdir_p(fpath),
+         {:ok, links} <- build_tree(fpath, attrs, []) do
+      make_links(fpath, Enum.reverse(links))
     end
   end
+
+  # Attributes and subdirectories, depth first in declaration order; the
+  # symlinks wait until everything they could point at exists.
+  defp build_tree(dir, attrs, links) do
+    Enum.reduce_while(attrs, {:ok, links}, fn {key, value}, {:ok, links} ->
+      case build_entry(dir, to_string(key), value, links) do
+        {:ok, links} -> {:cont, {:ok, links}}
+        {:error, _} = err -> {:halt, err}
+      end
+    end)
+  end
+
+  defp build_entry(dir, key, {:link, target}, links) do
+    if safe_segment?(key) and safe_target?(target),
+      do: {:ok, [{Path.join(dir, key), target} | links]},
+      else: {:error, {:unsafe_link, {key, target}}}
+  end
+
+  defp build_entry(dir, key, value, links) when is_map(value) or is_list(value) do
+    if safe_segment?(key) do
+      path = Path.join(dir, key)
+
+      # mkdir_p: the kernel makes some of a function's directories itself.
+      case File.mkdir_p(path) do
+        :ok -> build_tree(path, value, links)
+        {:error, reason} -> {:error, {:mkdir_failed, {key, reason}}}
+      end
+    else
+      {:error, {:unsafe_attribute_name, key}}
+    end
+  end
+
+  defp build_entry(dir, key, value, links) do
+    with :ok <- write_attr(dir, key, value), do: {:ok, links}
+  end
+
+  defp make_links(fpath, links) do
+    Enum.reduce_while(links, :ok, fn {link, target}, :ok ->
+      case File.ln_s(Path.join(fpath, target), link) do
+        :ok -> {:cont, :ok}
+        {:error, reason} -> {:halt, {:error, {:link_failed, {target, reason}}}}
+      end
+    end)
+  end
+
+  # A link target is a directory of the same function, named from its root.
+  defp safe_target?(target) when is_binary(target) do
+    segments = Path.split(target)
+    segments != [] and Path.type(target) == :relative and Enum.all?(segments, &safe_segment?/1)
+  end
+
+  defp safe_target?(_target), do: false
 
   defp build_configs(gadget, configs) do
     Enum.reduce_while(configs, :ok, fn {name, config}, :ok ->
@@ -391,6 +479,82 @@ defmodule BodgeUSBGadget do
   defp resolve_acm(port_attr) do
     with {:ok, content} <- File.read(port_attr) do
       {:ok, "/dev/ttyGS" <> String.trim(content)}
+    end
+  end
+
+  @video4linux "/sys/class/video4linux"
+
+  # The kernel names the video device's `function_name` after the function's
+  # configfs directory (not its `function_name` attribute, the interface's
+  # label) and makes it a child of the UDC's gadget, which tells two gadgets'
+  # "uvc.camera" apart.
+  defp resolve_uvc(gadget, function) do
+    with {:ok, udc} <- udc(gadget),
+         {:ok, parent} <- :file.read_link(Path.join(["/sys/class/udc", udc, "gadget"])) do
+      parent = Path.basename(parent)
+      Enum.find_value(ls(@video4linux), {:error, :not_bound}, &uvc_node(&1, function, parent))
+    else
+      :unbound -> {:error, :not_bound}
+      {:error, reason} -> {:error, reason}
+    end
+  end
+
+  defp uvc_node(video, function, parent) do
+    dir = Path.join(@video4linux, video)
+
+    with {:ok, name} <- File.read(Path.join(dir, "function_name")),
+         true <- String.trim(name) == function,
+         {:ok, device} <- :file.read_link(Path.join(dir, "device")),
+         true <- Path.basename(device) == parent do
+      {:ok, "/dev/" <> video}
+    else
+      _ -> nil
+    end
+  end
+
+  # What a nested function made below itself: its symlinks, each only once
+  # no other link points at the directory it is in (configfs refuses to
+  # change what is in use), then its directories, deepest first. The kernel's
+  # own directories refuse rmdir and go with the function.
+  defp remove_tree(dir) do
+    {links, dirs} = walk(dir, {[], []})
+    unlink(Enum.reverse(links))
+    Enum.each(Enum.reverse(dirs), &File.rmdir/1)
+  end
+
+  defp walk(dir, acc) do
+    Enum.reduce(ls(dir), acc, fn entry, {links, dirs} ->
+      path = Path.join(dir, entry)
+
+      case File.lstat(path) do
+        {:ok, %File.Stat{type: :symlink}} ->
+          {:ok, target} = File.read_link(path)
+          {[{path, Path.expand(target, dir)} | links], dirs}
+
+        {:ok, %File.Stat{type: :directory}} ->
+          {links, dirs} = walk(path, {links, dirs})
+          {links, [path | dirs]}
+
+        _ ->
+          {links, dirs}
+      end
+    end)
+  end
+
+  defp unlink([]), do: :ok
+
+  defp unlink(links) do
+    targets = Enum.map(links, fn {_path, target} -> target <> "/" end)
+    in_use? = fn {path, _target} -> Enum.any?(targets, &String.starts_with?(path, &1)) end
+
+    case Enum.split_with(links, &(not in_use?.(&1))) do
+      # A cycle: nothing is free, so take them in any order.
+      {[], held} ->
+        Enum.each(held, fn {path, _} -> File.rm(path) end)
+
+      {free, held} ->
+        Enum.each(free, fn {path, _} -> File.rm(path) end)
+        unlink(held)
     end
   end
 

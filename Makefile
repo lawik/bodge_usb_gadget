@@ -9,6 +9,7 @@
 
 PREFIX = $(MIX_APP_PATH)/priv
 NIF    = $(PREFIX)/bodge_usb_gadget_nif.so
+UVC    = $(PREFIX)/uvc_gadget
 
 SRC     = c_src/bodge_usb_gadget_nif.c
 HEADERS = $(wildcard c_src/*.h)
@@ -38,13 +39,18 @@ CFLAGS  += $(SAN_FLAGS) -g -O1
 LDFLAGS += $(SAN_FLAGS)
 endif
 
-all: $(NIF)
+all: $(NIF) $(UVC)
 
 $(NIF): $(SRC) $(HEADERS)
 	@mkdir -p $(PREFIX)
 	$(CC) $(CFLAGS) $(SRC) $(LDFLAGS) -o $@
 
+# BodgeUSBGadget.UVC's helper: a plain program, run as a port.
+$(UVC): c_src/uvc_gadget.c
+	@mkdir -p $(PREFIX)
+	$(CC) $(filter-out -fPIC,$(CFLAGS)) $< $(filter-out -shared,$(LDFLAGS)) -o $@
+
 clean:
-	$(RM) $(NIF)
+	$(RM) $(NIF) $(UVC)
 
 .PHONY: all clean
